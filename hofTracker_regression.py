@@ -295,7 +295,6 @@ class hofTracker:
 
             print 'xshape fit', np.shape(X), 'aashape', np.shape(aa)
             self.doRidgeFit(X, aa
-                            ,iFakeWeight=True
                             ,fit_intercept=True
                             ,min_aa=0.00
                             ,max_aa=1.00
@@ -381,7 +380,7 @@ class hofTracker:
         return xx, yy, ss, mm, meda, pk
 
 #####################
-    def bootStrapPlot(self, xx, yy, ss, mm, meda, pk):
+    def bootStrapPlot(self, xx, yy, ss, mm, meda, pk, act=None):
         plt.clf()
         plt.plot(xx, yy, 'k.')
         print len(xx), len(yy), len(ss)
@@ -394,16 +393,28 @@ class hofTracker:
         ax.set_xticklabels([])
 
         for i, k in enumerate(pk):
-            cx = i
+            cx = xx[i]
             cy = yy[i]
             print k, cx, cy
             kk = pk[i].split('_')[0]
-            plt.text(cx+0.25, cy, kk, fontsize='xx-small', rotation=90, horizontalalignment='center', verticalalignment='bottom')
+            if cy>0.3:
+                ccy = cy-0.23*cy
+                va = 'top'
+            else:
+                ccy= cy+0.5*cy
+                va = 'bottom'
+            plt.text(cx+0.25, ccy, kk, fontsize='xx-small', rotation=90, horizontalalignment='center', verticalalignment=va, alpha=0.85)
 
+            if not act is None:                
+                plt.plot(xx[i]-0.2, act[pk[i]], 'b-')
+
+        xmin, xmax = plt.xlim()
+        dx = xmax-xmin
+        plt.xlim(xmin-0.085*dx, xmax+0.085*dx)
         plt.axhline(0.0, color='k', linestyle='--')
         plt.axhline(1.0, color='k', linestyle='--')
-        plt.axhline(0.75, color='b', linestyle='-')
-        plt.axhline(0.05, color='r', linestyle='-')
+        plt.axhline(0.75, color='b', linestyle='-', linewidth=1, alpha=0.2)
+        plt.axhline(0.05, color='r', linestyle='-', linewidth=1, alpha=0.2)
 
         xmin, xmax = plt.xlim()
         ymin, ymax = plt.ylim()
