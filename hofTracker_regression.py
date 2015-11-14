@@ -69,6 +69,7 @@ class hofTracker:
                 try:
                     v = float(st[i])
                 except ValueError:
+                    print 'warning ValueError:', 'st=', st
                     v = 0
 
                 tmp = [yr, nam, k, v]
