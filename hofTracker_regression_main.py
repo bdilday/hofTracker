@@ -140,8 +140,8 @@ if __name__=='__main__':
 
     ht = hot.hofTracker(vbose=vbose)
 
-    data14 = ht.procFileToData('hofTracker_bd_2014.csv')
-    data15 = ht.procFileToData('hofTracker_bd_2015.csv')
+    data14 = ht.procFileToData('./data/hofTracker_bd_2014.csv')
+    data15 = ht.procFileToData('./data/hofTracker_bd_2015.csv')
 
     X14, pls14, vts14, aa14 = ht.dataToArray(data14)
     X15, pls15, vts15, aa15 = ht.dataToArray(data15)

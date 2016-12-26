@@ -4,6 +4,8 @@
 import os, sys
 import copy
 import datetime
+import re
+import datetime
 
 import numpy as np
 
@@ -17,14 +19,60 @@ from sklearn import metrics
 
 class hofTracker:
 
-##############################
     def __init__(self, fit_intercept=True, vbose=0):
         self.makeNameDict()
         self.vbose = vbose
         self.alphas = [10**i for i in range(-4, 4)] 
         self.fitter = linear_model.RidgeCV(alphas=self.alphas, fit_intercept=True)
+        self.default_header_path = './data/headers'
+        self.default_data_path = './data/csv'
 
-##############################
+    def get_merged_data_by_year(self, year):
+        return self.merge_header_csv('./data/hofTracker_header_{}.txt'.format(year),
+                                     './data/hofTracker_rt_trimmed_{}.csv'.format(year),
+                                     'test.csv')
+
+    def locate_date(self, string_array):
+        for s in string_array:
+            m = re.search('([0-9]{1,2})/([0-9]{1,2})/([0-9]{1,4})', s)
+            if m:
+                month, day, year = [int(i) for i in m.groups()]
+                if year<2000:
+                    year +=  2000
+                return datetime.date(year, month, day)
+        return None
+
+    def get_timestamp(self, date):
+        if date is None:
+            return 0
+        date_reference = datetime.date(1901,1,1)
+        return (date - date_reference).days
+
+    def get_merged_data_by_year(self, year):
+
+        return self.merge_header_csv('{}/hofTracker_header_{:d}.txt'.format(self.default_header_path, year),
+                                     '{}/hofTracker_rt_trimmed_{:d}.csv'.format(self.default_data_path, year),
+                                     None
+                                     )
+
+    def merge_header_csv(self, header_path, csv_path, output_path):
+        merged_data = {}
+        hd = [l.strip() for l in open(header_path).readlines()][0]
+        players = [s.replace('\"', '') for s in hd.split(',')]
+        lines = [l.strip() for l in open(csv_path).readlines()]
+        for l in lines:
+            st = l.split(',')
+            voter_name = st[0]
+            vote_data = st[1:(len(players)+1)]
+
+            def _parse_vote(s):
+                return 0 if s == '' else 1
+            vote_data = [_parse_vote(s) for s in vote_data]
+            merged_data[voter_name] = dict(zip(players, vote_data))
+            merged_data[voter_name]['DateAdded'] = self.locate_date(st)
+            merged_data[voter_name]['timestamp'] = self.get_timestamp(merged_data[voter_name]['DateAdded'])
+        return merged_data
+
     def procFileToData(self, ifile, listOfVoters=[]):
         yr = ifile.replace('.csv','').split('_')[-1]
         yr = int(yr)
@@ -177,13 +225,7 @@ class hofTracker:
             aa = None
         return X, np.array(pls), np.array(vts), aa
 
-##############################
-##############################
-##############################
     def filterArray(self, data, vts, com=None):
-#        if len(com):
-#            return data
-
         tmp = []
         nvts = []
 
