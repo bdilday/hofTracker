@@ -3,11 +3,13 @@
 
 import os, sys
 import copy
-import datetime
 import re
 import datetime
+import csv
+import pandas as pd
 
 import numpy as np
+import fuzzywuzzy
 
 from matplotlib import pyplot as plt
 from matplotlib.mlab import rms_flat
@@ -26,11 +28,6 @@ class hofTracker:
         self.fitter = linear_model.RidgeCV(alphas=self.alphas, fit_intercept=True)
         self.default_header_path = './data/headers'
         self.default_data_path = './data/csv'
-
-    def get_merged_data_by_year(self, year):
-        return self.merge_header_csv('./data/hofTracker_header_{}.txt'.format(year),
-                                     './data/hofTracker_rt_trimmed_{}.csv'.format(year),
-                                     'test.csv')
 
     def locate_date(self, string_array):
         for s in string_array:
@@ -51,27 +48,73 @@ class hofTracker:
     def get_merged_data_by_year(self, year):
 
         return self.merge_header_csv('{}/hofTracker_header_{:d}.txt'.format(self.default_header_path, year),
-                                     '{}/hofTracker_rt_trimmed_{:d}.csv'.format(self.default_data_path, year),
-                                     None
+                                     '{}/hofTracker_rt_trimmed_{:d}.csv'.format(self.default_data_path, year)
                                      )
 
-    def merge_header_csv(self, header_path, csv_path, output_path):
+    def clean_voter_name(self, s):
+        s = re.sub('\(.+\)', '', s)
+        s = re.sub('\*','',s)
+        s = re.sub('\'', '', s)
+        s = re.sub('\.', '', s)
+        for k, v in self.nameDict.items():
+            s = s.replace(k, v)
+        return s.lstrip().strip()
+
+    def get_best_fuzzy_name_match(self, query, choices):
+        ans = fuzzywuzzy.process.extract(query, choices)
+        return ans
+
+    def convert_dict(self, merged_data):
+        converted_data = {}
+        voters = sorted(merged_data.keys())
+        hd = sorted(merged_data[voters[0]].keys())
+        converted_data['hd'] = hd
+        converted_data['payload'] = {}
+        for voter, voter_choices in merged_data.items():
+            converted_data['payload'][voter] = \
+                [voter_choices[k] for k in hd]
+        return converted_data
+
+    def write_merged_csv(self, merged_data, outfile):
+        converted_data = self.convert_dict(merged_data)
+        voter_keys = sorted(converted_data['payload'].keys())
+        # open in binary to avoid windows carriage return issues
+        with open(outfile, 'wb') as fh:
+            csvw = csv.writer(fh, quoting=csv.QUOTE_NONNUMERIC)
+            csvw.writerow(converted_data['hd'])
+            for v in voter_keys:
+                row = [v] + [str(i) for i in converted_data['payload'][v]]
+                csvw.writerow(row)
+
+    def merge_header_csv(self, header_path, csv_path):
         merged_data = {}
         hd = [l.strip() for l in open(header_path).readlines()][0]
         players = [s.replace('\"', '') for s in hd.split(',')]
         lines = [l.strip() for l in open(csv_path).readlines()]
         for l in lines:
             st = l.split(',')
-            voter_name = st[0]
+            voter_name = self.clean_voter_name(st[0])
             vote_data = st[1:(len(players)+1)]
 
             def _parse_vote(s):
                 return 0 if s == '' else 1
             vote_data = [_parse_vote(s) for s in vote_data]
             merged_data[voter_name] = dict(zip(players, vote_data))
-            merged_data[voter_name]['DateAdded'] = self.locate_date(st)
-            merged_data[voter_name]['timestamp'] = self.get_timestamp(merged_data[voter_name]['DateAdded'])
+            merged_data[voter_name]['timestamp'] = self.get_timestamp(self.locate_date(st))
         return merged_data
+
+    def make_tidy_csv(self):
+        dfs = []
+        for yr in range(2009, 2017+1):
+            md = self.get_merged_data_by_year(yr)
+            df = pd.DataFrame.from_dict(md, orient="index")
+            df = df.assign(year=yr, voter=df.index)
+            tmp = pd.melt(df, id_vars=["voter", "year", "timestamp"])
+            dfs.append(tmp)
+        all_data = pd.concat(dfs)
+        all_data = all_data.assign(value=np.array(all_data.value, dtype='i4'))
+        all_data = all_data.rename(columns={'variable': 'player'})
+        return all_data
 
     def procFileToData(self, ifile, listOfVoters=[]):
         yr = ifile.replace('.csv','').split('_')[-1]
@@ -139,6 +182,7 @@ class hofTracker:
         rs['Randy J Miller'] = 'Randy Miller'
         rs['Andrew Baggerly'] ='Andrew Baggarly'
         rs['Dan Shuaghnessy'] = 'Dan Shaughnessy'
+        rs['Dan Shaugnessy'] = 'Dan Shaughnessy'
         rs['David M Wilheim'] = 'David Wilhelm'
         rs['https://twitter.com/NotMrTibbs/status/546387088707301376'] = 'Art Spander'
         rs['https://twittercom/NotMrTibbs/status/546387088707301376'] = 'Art Spander'
@@ -149,8 +193,28 @@ class hofTracker:
         rs['http://bit.ly/1CJv758'] = 'C Trent Rosencrans'
         rs['http://bitly/1CJv758'] = 'C Trent Rosencrans'
 
+        rs['Steven Geitschier'] = 'Steven Gietschier'
+        rs['Dejan Kovavecic'] = 'Dejan Kovacevic'
+        rs['Dave Ammenheuser'] = 'David Ammenheuser'
+        rs['Bob Keunster'] = 'Bob Kuenster'
+        rs['Edward B. Almada'] = 'Eduardo Almada'
+        rs['Edward B Almada'] = 'Eduardo Almada'
+        rs['Pete Abraham'] = 'Peter Abraham'
+        rs['Richard F. Telander'] = 'Rick Telander'
+        rs['Dave Lariviere'] = 'David Lariviere'
+        rs['Charles R Scoggins Jr'] = 'Chaz Scoggins'
+        rs['William Ballou'] = 'Bill Ballou'
+        rs['Joseph E Hoppel'] = 'Joe Hoppel'
+        rs['Mike Silverman'] = 'Michael Silverman'
+        rs['Chris De Luca'] = 'Chris DeLuca'
+        rs['William Center'] = 'Bill Center'
+        rs['La Velle E Neal III'] = 'La Velle Neal'
+        rs['Jon Haakenson'] = 'Joe Haakenson'
+        rs['Terrence Moore'] = 'Terence Moore'
+        rs['Mark Topkin'] = 'Marc Topkin'
+        rs['Evan P Grant'] = 'Evan Grant'
+        rs['Mike Gonzales'] = 'Mark Gonzales'
         self.nameDict = copy.copy(rs)
-
 
 #########################
     def dataToArray(self, data, vbose=0):
