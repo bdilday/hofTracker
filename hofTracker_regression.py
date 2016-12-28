@@ -46,7 +46,6 @@ class hofTracker:
         return (date - date_reference).days
 
     def get_merged_data_by_year(self, year):
-
         return self.merge_header_csv('{}/hofTracker_header_{:d}.txt'.format(self.default_header_path, year),
                                      '{}/hofTracker_rt_trimmed_{:d}.csv'.format(self.default_data_path, year)
                                      )
@@ -74,6 +73,11 @@ class hofTracker:
             converted_data['payload'][voter] = \
                 [voter_choices[k] for k in hd]
         return converted_data
+
+    # def append_actual_to_merged_data(self, merged_data, year):
+    #     aa = self.get_actual_by_year(year)
+    #     if aa is not None:
+    #         merged_data['actual']
 
     def write_merged_csv(self, merged_data, outfile):
         converted_data = self.convert_dict(merged_data)
@@ -215,6 +219,23 @@ class hofTracker:
         rs['Evan P Grant'] = 'Evan Grant'
         rs['Mike Gonzales'] = 'Mark Gonzales'
         self.nameDict = copy.copy(rs)
+
+    def get_actual_by_year(self, year):
+        lines = [l.strip() for l in open('./data/actual_results/actual_results.csv')]
+        hd = [l.strip() for l in open('{}/hofTracker_header_{:d}.txt'.format(self.default_header_path, year))][0].split(',')
+        hd = [h.replace('\"', '') for h in hd]
+        for l in lines:
+            st = l.split(',')
+            if int(st[0]) == year:
+                values = []
+                for v in st[1:]:
+                    if v=='':
+                        v = 0.0
+                    else:
+                        v = float(v)/100.0
+                    values.append(v)
+                return dict(zip(hd, values))
+        return None
 
 #########################
     def dataToArray(self, data, vbose=0):
@@ -531,7 +552,42 @@ class hofTracker:
         
 #        plt.show()
 
+    def simple_fit(self):
+        md = {}
+        for yr in [2016, 2017]:
+            md[yr] = pd.DataFrame.from_dict(
+                self.get_merged_data_by_year(yr),
+                orient="index").drop('timestamp', axis=1)
 
+        vv = []
+        aa = self.get_actual_by_year(2016)
+        for v in md[2016].columns:
+            print(v, aa[v])
+            vv.append(aa[v])
+
+        md[2016] = md[2016].transpose().assign(actual=vv).transpose()
+        ppa = []
+
+        yy = np.array(vv).reshape((-1, 1))
+
+        fitter = linear_model.RidgeCV(alphas=[0.01, 0.1, 1, 10], fit_intercept=True)
+        ss = set(md[2017].index).intersection(set(md[2016].index))
+        df1 = md[2016].loc[ss,]
+        idx = np.where(df1.mean(0) >= 0.02)
+        yy = yy[idx]
+        df1 = (df1.transpose()).iloc[idx].transpose()
+        df2 = md[2017].loc[ss,]
+        xxt = np.array(df1).transpose()
+        nvt = xxt.shape[1]
+
+        for i in range(1000):
+            cc = np.random.randint(low=0, high=nvt - 1, size=nvt)
+            nn = (xxt.transpose()[cc]).transpose()
+            fitter.fit(nn, yy)
+            pp = fitter.predict(df2.transpose())
+            ppa.append(pp)
+        ppc = np.column_stack(ppa)
+        return zip(md[2017].columns, ppc.mean(1), ppc.std(1))
 #########################
 if __name__=='__main__':
 

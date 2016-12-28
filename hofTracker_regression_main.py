@@ -140,8 +140,8 @@ if __name__=='__main__':
 
     ht = hot.hofTracker(vbose=vbose)
 
-    data14 = ht.procFileToData('./data/hofTracker_bd_2014.csv')
-    data15 = ht.procFileToData('./data/hofTracker_bd_2015.csv')
+    data14 = ht.procFileToData('./data/csv/hofTracker_bd_2015.csv')
+    data15 = ht.procFileToData('./data/csv/hofTracker_bd_2016.csv')
 
     X14, pls14, vts14, aa14 = ht.dataToArray(data14)
     X15, pls15, vts15, aa15 = ht.dataToArray(data15)
@@ -169,7 +169,6 @@ if __name__=='__main__':
     pp = fitter.predict(X15[cc15])
     for i, p in enumerate(pp):
         print p, pls15[cc15][i]
-    
 
     xtrn = X14[cc14]
     atrn = aa14[cc14]
