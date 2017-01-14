@@ -15,35 +15,37 @@ from sklearn import metrics
 
 import hofTracker_regression as hot
 
-#########################
-def checkWeights(ht, xtrn, xtst, att, vts, pls14, pls15, ws=None):
-    cats = []
 
-    ht.doRidgeFit(xtrn, att, ws=ws)
-    
-    p14 = [p.split('_')[0] for p in pls14]
-    p15 = [p.split('_')[0] for p in pls15]
+def data_fro_comparison_models():
+    for i in range(len(xx)):
+        a = adict[pk[i]]
+        kk = pk[i].split('_')[0]
 
-    lk14 = {}
-    lk15 = {}
+        cc = np.logical_and(data15['voter'] == 'tango_model', data15['player'] == kk)
+        tm = data15[cc]['ivote'][0] / 100.0
 
-    ps = [p14, p15]
-    lks = [lk14, lk15]
-    for ipp, pA in enumerate(ps):
-        for i, p in enumerate(pA):
-            lks[ipp][p] = i
+        #        tm = 0.0
+        tmr['yy'].append(tm)
+        tmr['ss'].append(0.01)
+        tmr['rr'].append(tm - a)
 
+        cc = np.logical_and(data15['voter'] == 'baseballot', data15['player'] == kk)
+        tm = data15[cc]['ivote'][0] / 100.0
 
-    for i, v in enumerate(zip(vts, ht.fitter.coef_)):
-        print '***'
-        vt, iv = v[:]
-        print i, vt, iv
-        for p in lks[0]:
-            if not p in lks[1]:
-                continue
-            print int(xtrn[lks[1][p], i]),
-            print int(xtst[lks[1][p], i]),
-            print p
+        bbr['yy'].append(tm)
+        bbr['rr'].append(tm - a)
+        bbr['ss'].append(0.01)
+
+    tmr['yy'] = np.array(tmr['yy'])
+    tmr['ss'] = np.array(tmr['ss'])
+    tmr['rr'] = np.array(tmr['rr'])
+    tmr['rms'] = rms_flat(tmr['rr'])
+
+    bbr['yy'] = np.array(bbr['yy'])
+    bbr['ss'] = np.array(bbr['ss'])
+    bbr['rr'] = np.array(bbr['rr'])
+    bbr['rms'] = rms_flat(bbr['rr'])
+
 
 #########################
 if __name__=='__main__':
@@ -75,10 +77,10 @@ if __name__=='__main__':
     theta_deg = 0.0
 
     iAddPar = True
-    nsamp = 20
+    nsamp = 1000
     nboot = 5
     withReplace = True
-    iFitNon = False
+    iFitNon = True
 
     for ia, a in enumerate(sys.argv):
         if a=='-mnyear':
@@ -140,8 +142,8 @@ if __name__=='__main__':
 
     ht = hot.hofTracker(vbose=vbose)
 
-    data14 = ht.procFileToData('./data/csv/hofTracker_bd_2015.csv')
-    data15 = ht.procFileToData('./data/csv/hofTracker_bd_2016.csv')
+    data14 = ht.procFileToData('./data/csv/hofTracker_bd_2016.csv')
+    data15 = ht.procFileToData('./data/csv/hofTracker_bd_2017.csv')
 
     X14, pls14, vts14, aa14 = ht.dataToArray(data14)
     X15, pls15, vts15, aa15 = ht.dataToArray(data15)
@@ -182,7 +184,7 @@ if __name__=='__main__':
 # pn = (Na*aa-pp*Np)/Nn
 # mm = pp*Np
 # nn = pn*Nn
-    ntot = 573.0
+    ntot = 450.0
     npub = 1.0*len(uvts)
     npriv = ntot-npub
     atrn_non = (ntot*atrn-npub*mm14[cc14])/npriv
@@ -202,29 +204,83 @@ if __name__=='__main__':
         att = atrn[:]
 
 
-    checkWeights(ht, xtrn, xtst, att, vts15, pls14[cc14], pls15[cc15], ws=ws)
+#    checkWeights(ht, xtrn, xtst, att, vts15, pls14[cc14], pls15[cc15], ws=ws)
 #    sys.exit()
 
-    xx, yy, ss, mm, meda, pk = ht.doBootStrap(xtrn, att, ptrn, xtst, ptst
-                                              ,nboot = nboot
-                                              ,withReplace=withReplace
-                                              ,nsamp=nsamp
-                                              ,ws=ws
-                                              )
+    ans = ht.doBootStrap(xtrn, att, ptrn, xtst, ptst
+                         ,nboot = nboot
+                         ,withReplace=withReplace
+                         ,nsamp=nsamp
+                         ,ws=ws
+                         )
 
+    xx, yy, ss, mm, meda, pk, inprob, outprob, amat = ans
+
+    mat = []
+    for k in pk:
+        mat.append(amat[k])
+    mat = np.array(mat)
     xx = np.array(xx)*3
-    efrac = ss/yy
+
+    mean_public = []
+    for pl in pk:
+        idx = np.where(pls15 == pl)[0][0]
+        mean_public.append(mm15[idx])
+    mean_public = np.array(mean_public)
 
     if iFitNon:
-        for v in [yy, mm, meda]:
-            a = (v*(ntot-npub)+mm15[cc15]*npub)/ntot
-            v = a[:]
+        newa = (mat * (ntot - npub) + (mean_public * npub).reshape((-1, 1))) / ntot
+        yy = np.mean(newa, 1)
+        meda = np.median(newa, 1)
+        ss = np.std(newa, 1)
+        inprob = np.sum(newa >= 0.75, 1)/(1.0 * newa.shape[1])
+        outprob = np.sum(newa < 0.05, 1)/(1.0 * newa.shape[1])
 
-        ss = yy*efrac
+    warnings = ''
+    print (' {:5s} | {:s} | '
+           '{:s} | {:s} | {:s}'.format('mean%'
+                                       ,'95% bootstrap '
+                                       ,'priv. - public % '
+                                       ,'res. - public % '
+                                       ,'player')
+           )
 
-    adict = {}
-    for i, p in enumerate(pls15):
-        adict[p] = aa15[i]
+    idx = range(len(pk))
+    tmp = idx[4]
+    idx[4] = idx[3]
+    idx[3] = tmp
+
+    for i in idx:
+        pl = pk[i]
+        ymin = yy[i] - 2 * ss[i]
+        ymax = yy[i] + 2 * ss[i]
+
+        # hack hack hack!
+        if ymin<0:
+            warnings += 'warning; {} has ymin less than 0\n'.format(pl)
+            ymin = 0
+        diff_respublic = 100 * (yy[i] - mean_public[i])
+        diff_privpublic = 100 * (mat.mean(1)[i] - mean_public[i])
+        print (' {:4.1f}   ({:4.1f} - {:4.1f}) '
+               '          {:+5.1f} '
+               '          {:+5.1f} '
+               '         {}'.format(100*yy[i],
+                                    100*ymin,
+                                    100*ymax,
+                                    diff_privpublic,
+                                    diff_respublic,
+                                    pl.split('_')[0]))
+
+    if len(warnings) > 0:
+        print '\n\n', warnings
+
+
+    if aa15 is not None:
+        adict = {}
+        for i, p in enumerate(pls15):
+            adict[p] = aa15[i]
+    else:
+        adict = None
 
     tmr = {}
     tmr['yy'] = []
@@ -236,43 +292,26 @@ if __name__=='__main__':
     bbr['ss'] = []
     bbr['rr'] = []
 
-    for i in range(len(xx)):
-        a = adict[pk[i]]
-        kk = pk[i].split('_')[0]
-        
 
-        cc = np.logical_and(data15['voter']=='tango_model', data15['player']==kk)
-        tm = data15[cc]['ivote'][0]/100.0
-        
-#        tm = 0.0
-        tmr['yy'].append(tm)
-        tmr['ss'].append(0.01)
-        tmr['rr'].append(tm-a)
-
-        cc = np.logical_and(data15['voter']=='baseballot', data15['player']==kk)
-        tm = data15[cc]['ivote'][0]/100.0
-        
-        bbr['yy'].append(tm)
-        bbr['rr'].append(tm-a)
-        bbr['ss'].append(0.01)
-
-    tmr['yy'] = np.array(tmr['yy'])
-    tmr['ss'] = np.array(tmr['ss'])
-    tmr['rr'] = np.array(tmr['rr'])
-    tmr['rms'] = rms_flat(tmr['rr'])
-
-    bbr['yy'] = np.array(bbr['yy'])
-    bbr['ss'] = np.array(bbr['ss'])
-    bbr['rr'] = np.array(bbr['rr'])
-    bbr['rms'] = rms_flat(bbr['rr'])
-
-    if iCheckTangoModel:
-        ht.bootStrapPlot(xx, tmr['yy'], tmr['ss'], tmr['yy'], tmr['yy'], pk, act=adict)
+    if aa15 is not None:
+        adict = {}
+        for i, p in enumerate(pls15):
+            adict[p] = aa15[i]
     else:
-        ht.bootStrapPlot(xx, yy, ss, mm, meda, pk, act=adict)
-        for i in range(len(xx)):
-            plt.plot(xx[i]+0.4, tmr['yy'][i], 'r^')
-            plt.plot(xx[i]+0.8, bbr['yy'][i], 'gv')
+        adict = None
+
+    tmr = {}
+    tmr['yy'] = []
+    tmr['ss'] = []
+    tmr['rr'] = []
+
+    bbr = {}
+    bbr['yy'] = []
+    bbr['ss'] = []
+    bbr['rr'] = []
+
+    ht.bootStrapPlot(xx, yy, ss, mm, meda, pk, act=adict)
+
 
     for i, v in enumerate(ht.fitter.coef_):
         print i, vts14[i],  v

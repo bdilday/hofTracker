@@ -45,6 +45,38 @@ class hofTracker:
         date_reference = datetime.date(1901,1,1)
         return (date - date_reference).days
 
+    #########################
+    def checkWeights(self, xtrn, xtst, att, vts, pls14, pls15, ws=None):
+        cats = []
+
+        self.doRidgeFit(xtrn, att, ws=ws)
+
+        p14 = [p.split('_')[0] for p in pls14]
+        p15 = [p.split('_')[0] for p in pls15]
+
+        lk14 = {}
+        lk15 = {}
+
+        ps = [p14, p15]
+        lks = [lk14, lk15]
+        for ipp, pA in enumerate(ps):
+            for i, p in enumerate(pA):
+                lks[ipp][p] = i
+
+        ans = {}
+        for i, v in enumerate(zip(vts, self.fitter.coef_)):
+            print '***'
+            vt, iv = v[:]
+            print i, vt, iv
+            ans[vt] = iv
+            for p in lks[0]:
+                if not p in lks[1]:
+                    continue
+                print int(xtrn[lks[1][p], i]),
+                print int(xtst[lks[1][p], i]),
+                print p
+        return ans
+
     def get_merged_data_by_year(self, year):
         return self.merge_header_csv('{}/hofTracker_header_{:d}.txt'.format(self.default_header_path, year),
                                      '{}/hofTracker_rt_trimmed_{:d}.csv'.format(self.default_data_path, year)
@@ -107,6 +139,11 @@ class hofTracker:
             merged_data[voter_name]['timestamp'] = self.get_timestamp(self.locate_date(st))
         return merged_data
 
+    def write_bd_csvs(self):
+        for yr in [2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017]:
+            md = self.get_merged_data_by_year(yr)
+            self.write_merged_csv(md, './data/csv/hofTracker_bd_{:d}.csv'.format(yr))
+
     def make_tidy_csv(self):
         dfs = []
         for yr in range(2009, 2017+1):
@@ -127,6 +164,10 @@ class hofTracker:
 
         hd = lines[0]
         ks = hd.split(',')
+        if len(ks) == len(lines[1].split(',')) - 1:
+            ks = [''] + ks
+
+        assert len(ks) == len(lines[1].split(','))
 
         data = []
         for l in lines[1:]:
@@ -140,16 +181,20 @@ class hofTracker:
             nam = nam.strip()
             nam = nam.replace('*','')
             nam = nam.replace('\'', '')
+            nam = nam.replace('\"', '')
             nam = nam.split('(')[0]
             nam = nam.strip()
             nam = nam.replace('.', '')
             for k, v in self.nameDict.items():
                 nam = nam.replace(k, v)
 
-            for i, k in enumerate(ks):
-                if i==0:
-                    continue
+            for i, ok in enumerate(ks):
+                # if i==0:
+                #     continue
 
+                k = ok.replace('\"', '')
+                if 'timestamp' in k:
+                    continue
                 if 'Known' in k:
                     continue
                 if len(k)==0:
@@ -162,7 +207,7 @@ class hofTracker:
                     continue
 
                 try:
-                    v = float(st[i])
+                    v = float(st[i].replace('\"', ''))
                 except ValueError:
                     print 'warning ValueError:', 'st=', st
                     v = 0
@@ -234,8 +279,9 @@ class hofTracker:
                     else:
                         v = float(v)/100.0
                     values.append(v)
-                return dict(zip(hd, values))
+                return zip(hd, values)
         return None
+
 
 #########################
     def dataToArray(self, data, vbose=0):
@@ -308,6 +354,20 @@ class hofTracker:
     
         if np.isnan(np.sum(aa)):
             aa = None
+
+        if aa is None:
+            res = self.get_actual_by_year(yr)
+            try:
+                res = dict(res)
+                print 'res', res
+            except TypeError:
+                print 'No results available yet'
+            if res is not None:
+                aa = []
+                for pl in pls:
+                    k = pl.split('_')[0]
+                    aa.append(res[k])
+                aa = np.array(aa)
         return X, np.array(pls), np.array(vts), aa
 
     def filterArray(self, data, vts, com=None):
@@ -448,7 +508,7 @@ class hofTracker:
 
             for i, v in enumerate(val):
                 k = pls[i]
-                print i, v, pls[i]
+                print '{:02d} {:.4f} {}'.format(i, v, pls[i])
                 if not k in ans:
                     ans[k] = []
                 ans[k].append(v)
@@ -457,12 +517,14 @@ class hofTracker:
         ks.sort()
         frms = np.array(frms)
         ww = 1.0/frms**2
-        xx= []
+        xx = []
         yy = []
         ss = []
         mm = []
         xs = []
         meda = []
+        inprob = []
+        outprob = []
 
         pos = {}
         pk = []
@@ -487,6 +549,8 @@ class hofTracker:
             umean = np.mean(ans[k])
             ustd  = np.std(ans[k])
             wmean = np.sum(ans[k]*ww)/np.sum(ww)
+            isin = np.sum(ans[k] >= 0.75)/(1.0 * len(ans[k]))
+            isout = np.sum(ans[k] < 0.05)/(1.0 * len(ans[k]))
 
             pk.append(k)
             xx.append(i)
@@ -496,7 +560,9 @@ class hofTracker:
             xs.append(k)
             meda.append(umed)
             pos[k] = (i, umean)
- 
+            inprob.append(isin)
+            outprob.append(isout)
+
         print frms
 
         xx = np.array(xx)
@@ -504,15 +570,16 @@ class hofTracker:
         ss = np.array(ss)
         mm = np.array(mm)
         meda = np.array(meda)        
-
-        return xx, yy, ss, mm, meda, pk
+        inprob = np.array(inprob)
+        outprob = np.array(outprob)
+        return xx, yy, ss, mm, meda, pk, inprob, outprob, ans
 
 #####################
     def bootStrapPlot(self, xx, yy, ss, mm, meda, pk, act=None):
         plt.clf()
         plt.plot(xx, yy, 'k.')
         print len(xx), len(yy), len(ss)
-        plt.errorbar(xx, yy, ss, ss*0.0, fmt='k.')
+        plt.errorbar(xx, yy, 2*ss, ss*0.0, fmt='k.')
         plt.plot(xx, mm, 'r.')
         plt.plot(xx, meda, 'y.')
         ax = plt.gca()
@@ -531,7 +598,10 @@ class hofTracker:
             else:
                 ccy= cy+0.5*cy
                 va = 'bottom'
-            plt.text(cx+0.25, ccy, kk, fontsize='xx-small', rotation=90, horizontalalignment='center', verticalalignment=va, alpha=0.85)
+            plt.text(cx+0.25, ccy, kk,
+                     fontsize='x-small',
+                     rotation=90, horizontalalignment='center',
+                     verticalalignment=va, alpha=0.85)
 
             if not act is None:                
                 plt.plot(xx[i]-0.2, act[pk[i]], 'b-')
@@ -560,7 +630,7 @@ class hofTracker:
                 orient="index").drop('timestamp', axis=1)
 
         vv = []
-        aa = self.get_actual_by_year(2016)
+        aa = dict(self.get_actual_by_year(2016))
         for v in md[2016].columns:
             print(v, aa[v])
             vv.append(aa[v])
